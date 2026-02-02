@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Staff Panel</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+}
+
+.container {
+  width: 400px;
+  margin: 40px auto;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  padding: 15px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status {
+  font-weight: bold;
+}
+
+.online { color: green; }
+.offline { color: red; }
+
+.chat-box {
+  border: 1px solid #ddd;
+  height: 300px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.msg {
+  margin: 5px 0;
+}
+
+.user { text-align: right; color: blue; }
+.staff { text-align: left; color: green; }
+.system { text-align: center; color: gray; }
+
+input {
+  width: 75%;
+  padding: 6px;
+}
+
+button {
+  padding: 6px 10px;
+}
+
+
+.ticket {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 5px;
+  cursor: pointer;
+}
+
+.ticket.active {
+  background: #e6f7ff;
+  border-color: #1890ff;
+  font-weight: bold;
+  cursor: default;
+}
+
+.ticket.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+</style>
+
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h3>Staff Panel</h3>
+    <span id="status" class="status offline">Offline</span>
+  </div>
+
+  <button onclick="goOnline()">Go Online</button>
+  <button onclick="goOffline()">Go Offline</button>
+
+  <h4>Tickets</h4>
+  <ul id="tickets"></ul>
+
+  <div id="chat" style="display:none;">
+    <div class="chat-box" id="chatBox"></div>
+    <input id="msg" placeholder="Type message" />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+let staffId = "staff1";
+let activeTicket = null;
+let renderedTickets = new Set();
+const ws = new WebSocket(`ws://localhost:8000/ws/staff/${staffId}`);
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "new_ticket") {
+    addTicket(data.ticket.ticket_id);
+  }
+
+  if (data.type === "message") {
+    addMsg(data.text, "user");
+  }
+};
+
+function goOnline() {
+  ws.send(JSON.stringify({ type: "status", status: "online" }));
+  setStatus("Online", true);
+
+  activeTicket = null;
+
+  chatBox.innerHTML = "";
+  document.getElementById("chat").style.display = "none";
+  document.getElementById("tickets").style.display = "block";
+
+  document.querySelectorAll(".ticket").forEach(t => {
+    t.classList.remove("active", "disabled");
+  });
+}
+
+function goOffline() {
+  ws.send(JSON.stringify({ type: "status", status: "offline" }));
+  setStatus("Offline", false);
+
+  activeTicket = null;
+
+  // Close chat only
+  chatBox.innerHTML = "";
+  document.getElementById("chat").style.display = "none";
+  document.getElementById("tickets").style.display = "block";
+
+  // Reset ticket visual state
+  document.querySelectorAll(".ticket").forEach(t => {
+    t.classList.remove("active", "disabled");
+  });
+}
+
+function addTicket(ticketId) {
+  // 🚫 Prevent duplicates
+  if (renderedTickets.has(ticketId)) return;
+
+  renderedTickets.add(ticketId);
+
+  const li = document.createElement("li");
+  li.className = "ticket";
+  li.dataset.ticketId = ticketId;
+  li.innerText = "Ticket: " + ticketId;
+
+  li.onclick = () => pickTicket(ticketId, li);
+
+  tickets.appendChild(li);
+}
+
+function pickTicket(ticketId, element) {
+  activeTicket = ticketId;
+
+  // ✅ CLEAR PREVIOUS CHAT MESSAGES
+  chatBox.innerHTML = "";
+
+  // Reset ticket UI
+  document.querySelectorAll(".ticket").forEach(t => {
+    t.classList.add("disabled");
+  });
+
+  element.classList.remove("disabled");
+  element.classList.add("active");
+
+  ws.send(JSON.stringify({
+    type: "pick_ticket",
+    ticket_id: ticketId
+  }));
+
+  document.getElementById("chat").style.display = "block";
+  document.getElementById("tickets").style.display = "none";
+}
+
+function sendMessage() {
+  const text = msg.value;
+  ws.send(JSON.stringify({
+    type: "message",
+    ticket_id: activeTicket,
+    text: text
+  }));
+  addMsg(text, "staff");
+  msg.value = "";
+}
+
+function addMsg(text, cls) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerText = text;
+  chatBox.appendChild(div);
+}
+
+function setStatus(text, online) {
+  const s = document.getElementById("status");
+  s.innerText = text;
+  s.className = online ? "status online" : "status offline";
+}
+</script>
+</body>
+</html>

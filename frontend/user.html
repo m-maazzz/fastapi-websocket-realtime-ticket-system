@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>User Chat</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+}
+
+.container {
+  width: 400px;
+  margin: 40px auto;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  padding: 15px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status {
+  font-weight: bold;
+}
+
+.online { color: green; }
+.offline { color: red; }
+
+.chat-box {
+  border: 1px solid #ddd;
+  height: 300px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.msg {
+  margin: 5px 0;
+}
+
+.user { text-align: right; color: blue; }
+.staff { text-align: left; color: green; }
+.system { text-align: center; color: gray; }
+
+input {
+  width: 75%;
+  padding: 6px;
+}
+
+button {
+  padding: 6px 10px;
+}
+.chat-locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h3>Support Chat</h3>
+    <span id="status" class="status offline">Waiting</span>
+  </div>
+  <p id="ticketDisplay"></p>
+  <button onclick="createTicket()">Start Chat</button>
+
+  <div id="chat" style="display:none;">
+    <div class="chat-box" id="chatBox"></div>
+
+    <input id="msg" placeholder="Waiting for staff..." disabled />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+let userId = "user1";
+let ticketId = null;
+let canChat = false;
+
+const ws = new WebSocket(`ws://localhost:8000/ws/user/${userId}`);
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+ if (data.type === "ticket_created") {
+  ticketId = data.ticket_id;
+
+  document.getElementById("ticketDisplay").innerText =
+    "Ticket ID: " + ticketId;
+
+  addSystem("Ticket created. Waiting for staff...");
+  disableInput(true);
+}
+
+  if (data.type === "assigned") {
+    canChat = true;
+    document.getElementById("chat").style.display = "block";
+    setStatus("Online", true);
+    chatBox.classList.remove("chat-locked");
+    addSystem("Staff joined the chat");
+    disableInput(false);    
+    
+  }
+
+  if (data.type === "staff_offline") {
+    canChat = false;
+    setStatus("Offline", false);
+    chatBox.classList.add("chat-locked");
+    addSystem("Staff went offline. Please wait...");
+    disableInput(true);
+  }
+
+  
+  
+  if (data.type === "message") {
+    addMsg(data.text, "staff");
+  }
+};
+
+function createTicket() {
+  ws.send(JSON.stringify({ type: "create_ticket" }));
+}
+
+function sendMessage() {
+  if (!canChat) {
+    addSystem("Staff is offline. Please wait...");
+    return;
+  }
+
+  const text = msg.value.trim();
+  if (!text) return;
+
+  ws.send(JSON.stringify({
+    type: "message",
+    ticket_id: ticketId,
+    text: text
+  }));
+
+  addMsg(text, "user");
+  msg.value = "";
+}
+
+function disableInput(disabled) {
+  const input = document.getElementById("msg");
+  input.disabled = disabled;
+  input.placeholder = disabled
+    ? "Waiting for staff..."
+    : "Type your message";
+}
+
+function addMsg(text, cls) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerText = text;
+  chatBox.appendChild(div);
+}
+
+function addSystem(text) {
+  addMsg(text, "system");
+}
+
+function setStatus(text, online) {
+  const s = document.getElementById("status");
+  s.innerText = text;
+  s.className = online ? "status online" : "status offline";
+}
+</script>
+</body>
+</html>
